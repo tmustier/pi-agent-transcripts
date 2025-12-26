@@ -1,44 +1,56 @@
-# claude-code-transcripts
+# pi-agent-transcripts
 
-[![PyPI](https://img.shields.io/pypi/v/claude-code-transcripts.svg)](https://pypi.org/project/claude-code-transcripts/)
-[![Changelog](https://img.shields.io/github/v/release/simonw/claude-code-transcripts?include_prereleases&label=changelog)](https://github.com/simonw/claude-code-transcripts/releases)
-[![Tests](https://github.com/simonw/claude-code-transcripts/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-transcripts/actions?query=workflow%3ATest)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-transcripts/blob/main/LICENSE)
+Convert Claude Code and [Pi](https://github.com/badlogic/pi-mono) agent session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
 
-Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
-
-[Example transcript](https://static.simonwillison.net/static/2025/claude-code-microjs/index.html) produced using this tool.
-
-Read [A new way to extract detailed transcripts from Claude Code](https://simonwillison.net/2025/Dec/25/claude-code-transcripts/) for background on this project.
+Fork of [simonw/claude-code-transcripts](https://github.com/simonw/claude-code-transcripts) with added Pi agent support.
 
 ## Installation
 
 Install this tool using `uv`:
 ```bash
-uv tool install claude-code-transcripts
+uv tool install pi-agent-transcripts
 ```
 Or run it without installing:
 ```bash
-uvx claude-code-transcripts --help
+uvx pi-agent-transcripts --help
 ```
 
 ## Usage
 
-This tool converts Claude Code session files into browseable multi-page HTML transcripts.
+This tool converts Claude Code and Pi agent session files into browseable multi-page HTML transcripts.
 
-There are three commands available:
+There are four commands available:
 
 - `local` (default) - select from local Claude Code sessions stored in `~/.claude/projects`
+- `pi` - select from local Pi agent sessions stored in `~/.pi/agent/sessions`
 - `web` - select from web sessions via the Claude API
 - `json` - convert a specific JSON or JSONL session file
 
-The quickest way to view a recent local session:
+### Pi sessions
+
+Pi agent sessions are stored as JSONL files in `~/.pi/agent/sessions`. Use the `pi` command to select from recent sessions:
 
 ```bash
-claude-code-transcripts
+pi-agent-transcripts pi
 ```
 
-This shows an interactive picker to select a session, generates HTML, and opens it in your default browser.
+This shows an interactive picker to select a Pi session, generates HTML, and opens it in your default browser.
+
+Use `--limit` to control how many sessions are shown (default: 10):
+
+```bash
+pi-agent-transcripts pi --limit 20
+```
+
+### Claude Code local sessions
+
+Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:
+
+```bash
+pi-agent-transcripts
+# or explicitly:
+pi-agent-transcripts local
+```
 
 ### Output options
 
@@ -55,35 +67,19 @@ The generated output includes:
 - `index.html` - an index page with a timeline of prompts and commits
 - `page-001.html`, `page-002.html`, etc. - paginated transcript pages
 
-### Local sessions
-
-Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:
-
-```bash
-claude-code-transcripts
-# or explicitly:
-claude-code-transcripts local
-```
-
-Use `--limit` to control how many sessions are shown (default: 10):
-
-```bash
-claude-code-transcripts local --limit 20
-```
-
 ### Web sessions
 
 Import sessions directly from the Claude API:
 
 ```bash
 # Interactive session picker
-claude-code-transcripts web
+pi-agent-transcripts web
 
 # Import a specific session by ID
-claude-code-transcripts web SESSION_ID
+pi-agent-transcripts web SESSION_ID
 
 # Import and publish to gist
-claude-code-transcripts web SESSION_ID --gist
+pi-agent-transcripts web SESSION_ID --gist
 ```
 
 On macOS, API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
@@ -93,11 +89,11 @@ On macOS, API credentials are automatically retrieved from your keychain (requir
 Convert a specific session file directly:
 
 ```bash
-claude-code-transcripts json session.json -o output-directory/
-claude-code-transcripts json session.jsonl --open
+pi-agent-transcripts json session.json -o output-directory/
+pi-agent-transcripts json session.jsonl --open
 ```
 
-When using [Claude Code for web](https://claude.ai/code) you can export your session as a `session.json` file using the `teleport` command.
+The tool auto-detects the format (Claude Code vs Pi) based on the file contents.
 
 ### Auto-naming output directories
 
@@ -105,10 +101,10 @@ Use `-a/--output-auto` to automatically create a subdirectory named after the se
 
 ```bash
 # Creates ./session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -a
+pi-agent-transcripts web SESSION_ABC123 -a
 
 # Creates ./transcripts/session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
+pi-agent-transcripts web SESSION_ABC123 -o ./transcripts -a
 ```
 
 ### Publishing to GitHub Gist
@@ -116,9 +112,10 @@ claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
 Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
 
 ```bash
-claude-code-transcripts --gist
-claude-code-transcripts web --gist
-claude-code-transcripts json session.json --gist
+pi-agent-transcripts --gist
+pi-agent-transcripts pi --gist
+pi-agent-transcripts web --gist
+pi-agent-transcripts json session.json --gist
 ```
 
 This will output something like:
@@ -133,7 +130,7 @@ The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to 
 Combine with `-o` to keep a local copy:
 
 ```bash
-claude-code-transcripts json session.json -o ./my-transcript --gist
+pi-agent-transcripts json session.json -o ./my-transcript --gist
 ```
 
 **Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
@@ -143,7 +140,7 @@ claude-code-transcripts json session.json -o ./my-transcript --gist
 Use the `--json` option to include the original session file in the output directory:
 
 ```bash
-claude-code-transcripts json session.json -o ./my-transcript --json
+pi-agent-transcripts json session.json -o ./my-transcript --json
 ```
 
 This will output:
@@ -157,10 +154,10 @@ This is useful for archiving the source data alongside the HTML output.
 
 To contribute to this tool, first checkout the code. You can run the tests using `uv run`:
 ```bash
-cd claude-code-transcripts
+cd pi-agent-transcripts
 uv run pytest
 ```
 And run your local development copy of the tool like this:
 ```bash
-uv run claude-code-transcripts --help
+uv run pi-agent-transcripts --help
 ```
