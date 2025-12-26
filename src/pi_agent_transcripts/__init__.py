@@ -222,16 +222,19 @@ def parse_session_file(filepath):
     """Parse a session file and return normalized data.
 
     Supports both JSON and JSONL formats.
-    Returns a dict with 'loglines' key containing the normalized entries.
+    Returns a dict with 'loglines' key containing the normalized entries,
+    and 'format_type' key indicating 'pi' or 'claude'.
     """
     filepath = Path(filepath)
 
     if filepath.suffix == ".jsonl":
         return _parse_jsonl_file(filepath)
     else:
-        # Standard JSON format
+        # Standard JSON format (Claude Code web sessions)
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        data["format_type"] = "claude"
+        return data
 
 
 def _detect_jsonl_format(filepath):
@@ -392,7 +395,7 @@ def _parse_pi_jsonl_file(filepath):
             except json.JSONDecodeError:
                 continue
 
-    return {"loglines": loglines}
+    return {"loglines": loglines, "format_type": "pi"}
 
 
 def _parse_jsonl_file(filepath):
@@ -437,7 +440,7 @@ def _parse_jsonl_file(filepath):
             except json.JSONDecodeError:
                 continue
 
-    return {"loglines": loglines}
+    return {"loglines": loglines, "format_type": "claude"}
 
 
 class CredentialsError(Exception):
@@ -1053,6 +1056,8 @@ def generate_html(json_path, output_dir, github_repo=None):
     data = parse_session_file(json_path)
 
     loglines = data.get("loglines", [])
+    format_type = data.get("format_type", "claude")
+    transcript_title = "Pi agent" if format_type == "pi" else "Claude Code"
 
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
@@ -1127,6 +1132,7 @@ def generate_html(json_path, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            transcript_title=transcript_title,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1211,6 +1217,7 @@ def generate_html(json_path, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        transcript_title=transcript_title,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
@@ -1592,6 +1599,8 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     output_dir.mkdir(exist_ok=True, parents=True)
 
     loglines = session_data.get("loglines", [])
+    format_type = session_data.get("format_type", "claude")
+    transcript_title = "Pi agent" if format_type == "pi" else "Claude Code"
 
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
@@ -1662,6 +1671,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            transcript_title=transcript_title,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1746,6 +1756,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        transcript_title=transcript_title,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
