@@ -1204,6 +1204,74 @@ class TestLocalSessionCLI:
         assert "No session selected" in result.output
 
 
+class TestPiSessionFormat:
+    """Tests for parsing Pi agent session format."""
+
+    def test_parses_pi_jsonl_format(self):
+        """Test that Pi JSONL format is parsed correctly."""
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        result = parse_session_file(fixture_path)
+
+        assert "loglines" in result
+        assert len(result["loglines"]) > 0
+        # Check user messages (excluding tool results which also have type="user")
+        user_msgs = [
+            e
+            for e in result["loglines"]
+            if e["type"] == "user" and isinstance(e["message"].get("content"), str)
+        ]
+        assert len(user_msgs) == 2
+        assert "hello world" in user_msgs[0]["message"]["content"].lower()
+
+    def test_pi_session_extracts_user_messages(self):
+        """Test that user messages are extracted from Pi format."""
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        result = parse_session_file(fixture_path)
+
+        # Get actual user messages (not tool results which also have type="user")
+        user_msgs = [
+            e
+            for e in result["loglines"]
+            if e["type"] == "user" and isinstance(e["message"].get("content"), str)
+        ]
+        assert len(user_msgs) == 2
+        # First message
+        assert "hello world" in user_msgs[0]["message"]["content"].lower()
+        # Second message
+        assert "main block" in user_msgs[1]["message"]["content"].lower()
+
+    def test_pi_session_extracts_assistant_messages(self):
+        """Test that assistant messages are extracted from Pi format."""
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        result = parse_session_file(fixture_path)
+
+        assistant_msgs = [e for e in result["loglines"] if e["type"] == "assistant"]
+        assert len(assistant_msgs) >= 2
+        # Should have tool calls
+        first_assistant = assistant_msgs[0]
+        content = first_assistant["message"]["content"]
+        assert isinstance(content, list)
+        # Should have text and tool_use blocks
+        types = [block.get("type") for block in content]
+        assert "text" in types
+
+    def test_pi_session_generates_html(self, output_dir):
+        """Test that Pi session files can be converted to HTML."""
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        generate_html(fixture_path, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        assert "hello world" in index_html.lower()
+        assert (output_dir / "page-001.html").exists()
+
+    def test_pi_session_summary_extraction(self):
+        """Test extracting summary from Pi session file."""
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        summary = get_session_summary(fixture_path)
+        # Should get first user message content
+        assert "hello world" in summary.lower()
+
+
 class TestOutputAutoOption:
     """Tests for the -a/--output-auto flag."""
 

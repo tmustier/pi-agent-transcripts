@@ -84,8 +84,13 @@ def get_session_summary(filepath, max_length=200):
 
 
 def _get_jsonl_summary(filepath, max_length=200):
-    """Extract summary from JSONL file."""
+    """Extract summary from JSONL file.
+
+    Supports both Claude Code and Pi formats.
+    """
     try:
+        # First pass: look for summary entries (Claude Code) or detect format
+        format_type = None
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -93,16 +98,30 @@ def _get_jsonl_summary(filepath, max_length=200):
                     continue
                 try:
                     obj = json.loads(line)
-                    # First priority: summary type entries
-                    if obj.get("type") == "summary" and obj.get("summary"):
+                    entry_type = obj.get("type")
+
+                    # First priority: summary type entries (Claude Code)
+                    if entry_type == "summary" and obj.get("summary"):
                         summary = obj["summary"]
                         if len(summary) > max_length:
                             return summary[: max_length - 3] + "..."
                         return summary
+
+                    # Detect Pi format
+                    if entry_type == "session":
+                        format_type = "pi"
+                    elif entry_type == "message" and isinstance(
+                        obj.get("message"), dict
+                    ):
+                        if "role" in obj.get("message", {}):
+                            format_type = "pi"
+                    elif entry_type in ("user", "assistant"):
+                        format_type = "claude"
+
                 except json.JSONDecodeError:
                     continue
 
-        # Second pass: find first non-meta user message
+        # Second pass: find first user message
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -110,8 +129,29 @@ def _get_jsonl_summary(filepath, max_length=200):
                     continue
                 try:
                     obj = json.loads(line)
-                    if (
-                        obj.get("type") == "user"
+                    entry_type = obj.get("type")
+
+                    # Handle Pi format: type="message" with message.role="user"
+                    if format_type == "pi" and entry_type == "message":
+                        message = obj.get("message", {})
+                        if message.get("role") == "user":
+                            content = message.get("content", [])
+                            # Pi content is array: [{"type": "text", "text": "..."}]
+                            if isinstance(content, list):
+                                for block in content:
+                                    if (
+                                        isinstance(block, dict)
+                                        and block.get("type") == "text"
+                                    ):
+                                        text = block.get("text", "").strip()
+                                        if text and not text.startswith("<"):
+                                            if len(text) > max_length:
+                                                return text[: max_length - 3] + "..."
+                                            return text
+
+                    # Handle Claude Code format: type="user"
+                    elif (
+                        entry_type == "user"
                         and not obj.get("isMeta")
                         and obj.get("message", {}).get("content")
                     ):
@@ -155,6 +195,29 @@ def find_local_sessions(folder, limit=10):
     return results[:limit]
 
 
+def find_pi_sessions(limit=10):
+    """Find recent Pi session files.
+
+    Pi stores sessions in ~/.pi/agent/sessions/.
+    Returns a list of (Path, summary) tuples sorted by modification time.
+    """
+    sessions_dir = Path.home() / ".pi" / "agent" / "sessions"
+    if not sessions_dir.exists():
+        return []
+
+    results = []
+    for f in sessions_dir.glob("*.jsonl"):
+        summary = get_session_summary(f)
+        # Skip empty sessions
+        if summary == "(no summary)":
+            continue
+        results.append((f, summary))
+
+    # Sort by modification time, most recent first
+    results.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)
+    return results[:limit]
+
+
 def parse_session_file(filepath):
     """Parse a session file and return normalized data.
 
@@ -171,8 +234,179 @@ def parse_session_file(filepath):
             return json.load(f)
 
 
+def _detect_jsonl_format(filepath):
+    """Detect whether a JSONL file is Claude Code format or Pi format.
+
+    Returns 'pi' if Pi format, 'claude' if Claude Code format.
+    """
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                entry_type = obj.get("type")
+                # Pi format has "session" header or "message" with nested role
+                if entry_type == "session":
+                    return "pi"
+                if entry_type == "message" and isinstance(obj.get("message"), dict):
+                    if "role" in obj.get("message", {}):
+                        return "pi"
+                # Claude Code format has "user" or "assistant" directly
+                if entry_type in ("user", "assistant"):
+                    return "claude"
+            except json.JSONDecodeError:
+                continue
+    return "claude"  # Default to Claude Code format
+
+
+def _normalize_pi_content(content):
+    """Normalize Pi message content to a string for user messages.
+
+    Pi stores content as array: [{"type": "text", "text": "..."}]
+    Claude Code expects string for user messages.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        # Extract text from text blocks
+        texts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                texts.append(block.get("text", ""))
+        return " ".join(texts)
+    return str(content)
+
+
+def _normalize_pi_assistant_content(content):
+    """Normalize Pi assistant message content to Claude Code format.
+
+    Pi uses: toolCall, toolResult
+    Claude Code uses: tool_use, tool_result
+    """
+    if not isinstance(content, list):
+        return content
+
+    normalized = []
+    for block in content:
+        if not isinstance(block, dict):
+            normalized.append(block)
+            continue
+
+        block_type = block.get("type")
+        if block_type == "toolCall":
+            # Convert Pi's toolCall to Claude Code's tool_use
+            normalized.append(
+                {
+                    "type": "tool_use",
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "input": block.get("arguments", {}),
+                }
+            )
+        elif block_type == "toolResult":
+            # This shouldn't appear in assistant messages, but handle it
+            normalized.append(block)
+        else:
+            # Keep other blocks as-is (text, thinking, etc.)
+            normalized.append(block)
+
+    return normalized
+
+
+def _parse_pi_jsonl_file(filepath):
+    """Parse Pi JSONL file and convert to standard format."""
+    loglines = []
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                entry_type = obj.get("type")
+
+                if entry_type == "message":
+                    message = obj.get("message", {})
+                    role = message.get("role")
+
+                    if role == "user":
+                        # Normalize user content to string
+                        content = _normalize_pi_content(message.get("content", ""))
+                        entry = {
+                            "type": "user",
+                            "timestamp": obj.get("timestamp", ""),
+                            "message": {"content": content},
+                        }
+                        loglines.append(entry)
+
+                    elif role == "assistant":
+                        # Normalize assistant content (convert toolCall to tool_use)
+                        content = _normalize_pi_assistant_content(
+                            message.get("content", [])
+                        )
+                        entry = {
+                            "type": "assistant",
+                            "timestamp": obj.get("timestamp", ""),
+                            "message": {"content": content},
+                        }
+                        loglines.append(entry)
+
+                    elif role == "toolResult":
+                        # Convert Pi's toolResult to Claude Code's tool_result format
+                        tool_call_id = message.get("toolCallId", "")
+                        result_content = message.get("content", [])
+                        # Extract text content
+                        if isinstance(result_content, list):
+                            text_parts = []
+                            for block in result_content:
+                                if (
+                                    isinstance(block, dict)
+                                    and block.get("type") == "text"
+                                ):
+                                    text_parts.append(block.get("text", ""))
+                            result_text = "\n".join(text_parts)
+                        else:
+                            result_text = str(result_content)
+
+                        entry = {
+                            "type": "user",  # Tool results come as user messages in Claude Code
+                            "timestamp": obj.get("timestamp", ""),
+                            "message": {
+                                "content": [
+                                    {
+                                        "type": "tool_result",
+                                        "tool_use_id": tool_call_id,
+                                        "content": result_text,
+                                    }
+                                ]
+                            },
+                        }
+                        loglines.append(entry)
+
+                # Skip session, model_change, compaction, thinking_level_change
+                # These are metadata, not conversation content
+
+            except json.JSONDecodeError:
+                continue
+
+    return {"loglines": loglines}
+
+
 def _parse_jsonl_file(filepath):
-    """Parse JSONL file and convert to standard format."""
+    """Parse JSONL file and convert to standard format.
+
+    Auto-detects between Claude Code and Pi formats.
+    """
+    # Detect format
+    format_type = _detect_jsonl_format(filepath)
+
+    if format_type == "pi":
+        return _parse_pi_jsonl_file(filepath)
+
+    # Claude Code format
     loglines = []
 
     with open(filepath, "r", encoding="utf-8") as f:
@@ -1088,6 +1322,125 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
+
+    # Copy JSONL file to output directory if requested
+    if include_json:
+        output.mkdir(exist_ok=True)
+        json_dest = output / session_file.name
+        shutil.copy(session_file, json_dest)
+        json_size_kb = json_dest.stat().st_size / 1024
+        click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
+
+    if gist:
+        # Inject gist preview JS and create gist
+        inject_gist_preview_js(output)
+        click.echo("Creating GitHub gist...")
+        gist_id, gist_url = create_gist(output)
+        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        click.echo(f"Gist: {gist_url}")
+        click.echo(f"Preview: {preview_url}")
+
+    if open_browser or auto_open:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
+
+
+@cli.command("pi")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    help="Output directory. If not specified, writes to temp dir and opens in browser.",
+)
+@click.option(
+    "-a",
+    "--output-auto",
+    is_flag=True,
+    help="Auto-name output subdirectory based on session filename (uses -o as parent, or current dir).",
+)
+@click.option(
+    "--repo",
+    help="GitHub repo (owner/name) for commit links.",
+)
+@click.option(
+    "--gist",
+    is_flag=True,
+    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+)
+@click.option(
+    "--json",
+    "include_json",
+    is_flag=True,
+    help="Include the original JSONL session file in the output directory.",
+)
+@click.option(
+    "--open",
+    "open_browser",
+    is_flag=True,
+    help="Open the generated index.html in your default browser (default if no -o specified).",
+)
+@click.option(
+    "--limit",
+    default=10,
+    help="Maximum number of sessions to show (default: 10)",
+)
+def pi_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+    """Select and convert a Pi session to HTML."""
+    from datetime import datetime
+
+    pi_sessions_folder = Path.home() / ".pi" / "agent" / "sessions"
+
+    if not pi_sessions_folder.exists():
+        click.echo(f"Pi sessions folder not found: {pi_sessions_folder}")
+        click.echo("No Pi sessions available.")
+        return
+
+    click.echo("Loading Pi sessions...")
+    results = find_pi_sessions(limit=limit)
+
+    if not results:
+        click.echo("No Pi sessions found.")
+        return
+
+    # Build choices for questionary
+    choices = []
+    for filepath, summary in results:
+        stat = filepath.stat()
+        mod_time = datetime.fromtimestamp(stat.st_mtime)
+        size_kb = stat.st_size / 1024
+        date_str = mod_time.strftime("%Y-%m-%d %H:%M")
+        # Truncate summary if too long
+        if len(summary) > 50:
+            summary = summary[:47] + "..."
+        display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
+        choices.append(questionary.Choice(title=display, value=filepath))
+
+    selected = questionary.select(
+        "Select a Pi session to convert:",
+        choices=choices,
+    ).ask()
+
+    if selected is None:
+        click.echo("No session selected.")
+        return
+
+    session_file = selected
+
+    # Determine output directory and whether to open browser
+    # If no -o specified, use temp dir and open browser by default
+    auto_open = output is None and not gist and not output_auto
+    if output_auto:
+        # Use -o as parent dir (or current dir), with auto-named subdirectory
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / session_file.stem
+    elif output is None:
+        output = Path(tempfile.gettempdir()) / f"pi-session-{session_file.stem}"
+
+    output = Path(output)
+    generate_html(session_file, output, github_repo=repo)
+
+    # Show output directory
+    click.echo(f"Generated: {output.resolve()}")
 
     # Copy JSONL file to output directory if requested
     if include_json:
