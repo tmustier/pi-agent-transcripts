@@ -1,4 +1,4 @@
-"""Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
+"""Convert Claude Code and Pi agent session files to HTML transcripts."""
 
 import json
 import html
@@ -20,7 +20,7 @@ import questionary
 
 # Set up Jinja2 environment
 _jinja_env = Environment(
-    loader=PackageLoader("claude_code_transcripts", "templates"),
+    loader=PackageLoader("pi_agent_transcripts", "templates"),
     autoescape=True,
 )
 
@@ -1220,9 +1220,9 @@ def generate_html(json_path, output_dir, github_repo=None):
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
-@click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
+@click.version_option(None, "-v", "--version", package_name="pi-agent-transcripts")
 def cli():
-    """Convert Claude Code session JSON to mobile-friendly HTML pages."""
+    """Convert Claude Code and Pi agent sessions to mobile-friendly HTML pages."""
     pass
 
 

@@ -1,7 +1,7 @@
 [project]
-name = "claude-code-transcripts"
-version = "0.3"
-description = "Convert Claude Code session files to HTML transcripts"
+name = "pi-agent-transcripts"
+version = "0.4"
+description = "Convert Claude Code and Pi agent session files to HTML transcripts"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
@@ -18,13 +18,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/simonw/claude-code-transcripts"
-Changelog = "https://github.com/simonw/claude-code-transcripts/releases"
-Issues = "https://github.com/simonw/claude-code-transcripts/issues"
-CI = "https://github.com/simonw/claude-code-transcripts/actions"
+Homepage = "https://github.com/tmustier/pi-agent-transcripts"
+Changelog = "https://github.com/tmustier/pi-agent-transcripts/releases"
+Issues = "https://github.com/tmustier/pi-agent-transcripts/issues"
+CI = "https://github.com/tmustier/pi-agent-transcripts/actions"
 
 [project.scripts]
-claude-code-transcripts = "claude_code_transcripts:main"
+pi-agent-transcripts = "pi_agent_transcripts:main"
 
 [build-system]
 requires = ["uv_build>=0.9.7,<0.10.0"]
