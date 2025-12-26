@@ -27,6 +27,7 @@ from pi_agent_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    find_pi_sessions,
 )
 
 
@@ -1270,6 +1271,39 @@ class TestPiSessionFormat:
         summary = get_session_summary(fixture_path)
         # Should get first user message content
         assert "hello world" in summary.lower()
+
+
+class TestFindPiSessions:
+    """Tests for finding Pi session files."""
+
+    def test_finds_sessions_in_subdirectories(self, tmp_path, monkeypatch):
+        """Test that Pi sessions are found in project subdirectories."""
+        # Create mock Pi sessions directory structure
+        # Pi stores sessions in ~/.pi/agent/sessions/<project-dir>/
+        sessions_dir = tmp_path / ".pi" / "agent" / "sessions"
+        project_dir = sessions_dir / "--Users-test-myproject--"
+        project_dir.mkdir(parents=True)
+
+        # Copy sample session file to the project subdirectory
+        fixture_path = Path(__file__).parent / "sample_pi_session.jsonl"
+        session_file = project_dir / "2025-01-01T12-00-00_test.jsonl"
+        session_file.write_text(fixture_path.read_text())
+
+        # Mock Path.home() to use our temp directory
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        # Now find_pi_sessions should find the session in the subdirectory
+        results = find_pi_sessions(limit=10)
+
+        assert len(results) == 1
+        assert results[0][0] == session_file
+        assert "hello world" in results[0][1].lower()
+
+    def test_returns_empty_for_nonexistent_directory(self, tmp_path, monkeypatch):
+        """Test that empty list is returned when sessions dir doesn't exist."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        results = find_pi_sessions(limit=10)
+        assert results == []
 
 
 class TestOutputAutoOption:

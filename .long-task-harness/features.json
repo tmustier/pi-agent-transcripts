@@ -1,0 +1,58 @@
+{
+  "version": "2.0",
+  "description": "Feature checklist with history tracking for session continuity",
+  "metadata": {
+    "project_name": "pi-agent-transcripts",
+    "created": "2025-12-26",
+    "last_updated": "2025-12-26",
+    "total_features": 2,
+    "completed_features": 2
+  },
+  "features": [
+    {
+      "id": "pi-session-support",
+      "name": "Pi agent session format support",
+      "description": "Parse and convert Pi agent JSONL session files to HTML",
+      "steps": [
+        "Detect Pi vs Claude Code format",
+        "Parse Pi JSONL format with message/session entries",
+        "Convert toolCall to tool_use format",
+        "Generate HTML from Pi sessions"
+      ],
+      "passes": true,
+      "notes": "Implemented in earlier commits (fork from claude-code-transcripts)",
+      "history": {
+        "sessions": [],
+        "files": [
+          "src/pi_agent_transcripts/__init__.py"
+        ],
+        "decisions": []
+      }
+    },
+    {
+      "id": "pi-session-discovery",
+      "name": "Pi session file discovery",
+      "description": "Find Pi session files in ~/.pi/agent/sessions/ directory structure",
+      "steps": [
+        "Search subdirectories (Pi stores sessions in project-named dirs)",
+        "Filter out empty sessions",
+        "Sort by modification time",
+        "Extract summary for display"
+      ],
+      "passes": true,
+      "notes": "Fixed in session 1 - was using *.jsonl instead of **/*.jsonl",
+      "history": {
+        "sessions": [
+          {"session": 1, "date": "2025-12-26", "action": "completed", "summary": "Fixed glob pattern to search subdirectories"}
+        ],
+        "files": [
+          "src/pi_agent_transcripts/__init__.py",
+          "tests/test_generate_html.py"
+        ],
+        "decisions": [
+          {"session": 1, "decision": "Pi stores sessions in project subdirectories like --Users-thomasmustier-ownership-chart--/"}
+        ]
+      }
+    }
+  ]
+}

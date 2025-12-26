@@ -198,7 +198,7 @@ def find_local_sessions(folder, limit=10):
 def find_pi_sessions(limit=10):
     """Find recent Pi session files.
 
-    Pi stores sessions in ~/.pi/agent/sessions/.
+    Pi stores sessions in ~/.pi/agent/sessions/<project-dir>/.
     Returns a list of (Path, summary) tuples sorted by modification time.
     """
     sessions_dir = Path.home() / ".pi" / "agent" / "sessions"
@@ -206,7 +206,7 @@ def find_pi_sessions(limit=10):
         return []
 
     results = []
-    for f in sessions_dir.glob("*.jsonl"):
+    for f in sessions_dir.glob("**/*.jsonl"):
         summary = get_session_summary(f)
         # Skip empty sessions
         if summary == "(no summary)":
